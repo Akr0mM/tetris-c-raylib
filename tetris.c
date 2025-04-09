@@ -29,6 +29,7 @@ typedef struct Block {
   int x;
   int y;
   Color c;
+  bool isFilled;
 } Block;
 
 void getInput();
@@ -41,6 +42,8 @@ void fixCurrent();
 void rotateCurrent();
 void freezeCurrent();
 void drawFreezedTetris();
+void checkLines();
+void instantDrop();
 
 const int bs = 30;
 int shapes[7][4][4][4] = {
@@ -227,7 +230,7 @@ int main(void) {
   {
     // Update
     getInput();
-    if (GetTime() - lastTime >= 1.0) {
+    if (GetTime() - lastTime >= 0.9) {
       dropCurrent();
       lastTime = GetTime();
     }
@@ -235,7 +238,7 @@ int main(void) {
     // Draw
     BeginDrawing();
 
-    ClearBackground(RAYWHITE);
+    ClearBackground(BLACK);
     drawTetris(current);
     drawFreezedTetris();
 
@@ -245,6 +248,39 @@ int main(void) {
   CloseWindow(); // Close window and OpenGL context
 
   return 0;
+}
+
+void checkLines() {
+  for (int y = HEIGHT - 1; y >= 0; y--) {
+    bool lineIsFilled = true;
+    for (int x = 0; x < WIDTH; x++) {
+      if (!freezedBlocks[y][x].isFilled) {
+        lineIsFilled = false;
+        break;
+      }
+    }
+
+    if (lineIsFilled) {
+      // Décaler toutes les lignes au-dessus vers le bas
+      for (int i = y; i > 0; i--) {
+        for (int x = 0; x < WIDTH; x++) {
+          freezedBlocks[i][x] = freezedBlocks[i - 1][x];
+          freezedBlocks[i][x].y = i;
+          freezedBlocks[i][x].x = x;
+        }
+      }
+
+      // Vider la première ligne (tout en haut)
+      for (int x = 0; x < WIDTH; x++) {
+        freezedBlocks[0][x].isFilled = false;
+        freezedBlocks[0][x].x = -1; // ou 0 si tu ne testes pas x
+      }
+
+      // Re-vérifie cette ligne (car elle contient maintenant la ligne du
+      // dessus)
+      y++;
+    }
+  }
 }
 
 void fixCurrent() {
@@ -259,9 +295,14 @@ void fixCurrent() {
           fixCurrent();
         }
 
-        if (current.y + i > HEIGHT - 1) {
-          undoMove();
-          freezeCurrent();
+        if (current.y + i > HEIGHT - 1 ||
+            freezedBlocks[current.y + i][current.x + j].isFilled) {
+          if (current.y != currentLastPos.y) {
+            undoMove();
+            freezeCurrent();
+          } else {
+            undoMove();
+          }
         }
       }
     }
@@ -272,8 +313,8 @@ void freezeCurrent() {
   for (int i = 0; i < 4; i++) {
     for (int j = 0; j < 4; j++) {
       if (current.tetris[current.rotation][i][j]) {
-        freezedBlocks[i][j] =
-            (Block){current.x + j, current.y + i, colors[current.shape]};
+        freezedBlocks[current.y + i][current.x + j] =
+            (Block){current.x + j, current.y + i, colors[current.shape], true};
       }
     }
   }
@@ -285,9 +326,18 @@ void drawFreezedTetris() {
   for (int i = 0; i < HEIGHT; i++) {
     for (int j = 0; j < WIDTH; j++) {
       Block b = freezedBlocks[i][j];
-      if (b.x != -1) {
+      if (b.isFilled) {
         DrawRectangle(b.x * bs, b.y * bs, bs, bs, b.c);
       }
+    }
+  }
+}
+
+void instantDrop() {
+  while (1) {
+    dropCurrent();
+    if (current.y == currentLastPos.y) {
+      break;
     }
   }
 }
@@ -308,7 +358,7 @@ void getInput() {
     moveCurrent(1);
   }
 
-  if (IsKeyDown(KEY_UP)) {
+  if (IsKeyPressed(KEY_UP)) {
     rotateCurrent();
   }
 
@@ -316,8 +366,8 @@ void getInput() {
     dropCurrent();
   }
 
-  if (IsKeyDown(KEY_SPACE)) {
-    newCurrent();
+  if (IsKeyPressed(KEY_SPACE)) {
+    instantDrop();
   }
 }
 
@@ -343,6 +393,7 @@ void newCurrent() {
   current = (Tetris){shape, (WIDTH - 4) / 2, -1, shapes[shape], rand() % 4};
   currentLastPos = current;
   fixCurrent();
+  checkLines();
 }
 
 void moveCurrent(int dir) {
